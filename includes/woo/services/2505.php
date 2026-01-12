@@ -234,6 +234,9 @@ class DPDRO_Service_Gateway_2505 extends WC_Shipping_Method
                 $code === 'GR' || // Grecia   -> ID WOO
                 $code === 'HU' || // Ungaria  -> ID WOO
                 $code === 'SK' || // Slovakia -> ID WOO
+                $code === 'CZ' || // CZECH REPUBLIC -> ID WOO
+                $code === 'SI' || // Slovenia -> ID WOO
+                $code === 'HR' || // HRVATSKA -> ID WOO
                 $code === 'PL'    // Polonia  -> ID WOO
             ) {
                 return true;

@@ -89,7 +89,8 @@ class WooApi
 			}
 		}
 		$parcels = [];
-		if ($serviceId != 2303  && ($serviceId == 2212 && ($country == 'HU' || $country == 'BG')) && ($serviceId == '2412' || $packagingMethod == 'all')) {
+		//if ($serviceId != 2303  && ($serviceId == 2212 && ($country == 'HU' || $country == 'BG')) && ($serviceId == '2412' || $packagingMethod == 'all')) {
+			if ($serviceId != 2303  && (($serviceId == 2212 && ($country == 'HU' || $country == 'BG')) || $serviceId == '2412' || $packagingMethod == 'all')) {
 			$index = 0;
 			$seqNo = 1;
 			foreach ($productsShipping as $product) {
