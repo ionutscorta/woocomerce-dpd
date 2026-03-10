@@ -59,6 +59,6 @@ class DPDUtil {
 
 	public static function getAllowedCountryCodes()
 	{
-		return ['RO', 'BG', 'GR', 'HU', 'PL', 'SI', 'SK', 'CZ', 'HR', 'AT', 'IT', 'DE', 'ES', 'FR','NL', 'BE', 'EE', 'DK', 'LU', 'LV', 'LT', 'FI', 'PT', 'SE'];
+		return ['RO', 'BG', 'GR', 'HU', 'PL',  'SK', 'CZ', 'HR', 'AT', 'IT', 'DE', 'ES', 'FR','NL', 'BE', 'EE', 'DK', 'LU', 'LV', 'LT', 'FI', 'PT', 'SE', 'SI'];
 	}
 }

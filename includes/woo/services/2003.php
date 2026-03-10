@@ -8,7 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class DPDRO_Service_Gateway_2212 extends WC_Shipping_Method
+class DPDRO_Service_Gateway_2003 extends WC_Shipping_Method
 {
     /**
      * Service data.
@@ -21,8 +21,8 @@ class DPDRO_Service_Gateway_2212 extends WC_Shipping_Method
      */
     function __construct($instance_id = 0)
     {
-        $this->serviceId   = '2212';
-        $this->serviceName = 'DPD REGIONAL  CEE';
+        $this->serviceId   = '2003';
+        $this->serviceName = 'CLASIC NATIONAL (COLET)';
 
         $this->id                 = 'dpdro_shipping_' . $this->serviceId;
         $this->instance_id        = absint($instance_id);
@@ -102,8 +102,6 @@ class DPDRO_Service_Gateway_2212 extends WC_Shipping_Method
                 $pickup = WC()->session->get('dpdro_office_id');
                 if (isset($pickup) && !empty($pickup)) {
                     $dataSettings['dpdro_pickup'] = $pickup;
-                } else if (DataZones::checkCustomPayment($package, $settings)){
-                    $taxServiceRate = 'yes';
                 }
             }
             if (!$dataSettings['dpdro_pickup_name']) {
@@ -142,7 +140,7 @@ class DPDRO_Service_Gateway_2212 extends WC_Shipping_Method
              */
             $wooApi = new WooApi($wpdb, $package, $dataSettings);
             $dataSettings['total_weight'] = $wooApi->totalWeight();
-            $dataSettings['parcels'] = $wooApi->prepareParcels($this->serviceId, $dataSettings['packaging_method'], $package['destination']['country']);
+            $dataSettings['parcels'] = $wooApi->prepareParcels($this->serviceId, $dataSettings['packaging_method']);
 
             /** 
              * Payment.
@@ -165,24 +163,18 @@ class DPDRO_Service_Gateway_2212 extends WC_Shipping_Method
              * Library api.
              */
             $dpdApi = new LibraryApi($dataSettings['username'], $dataSettings['password']);
-
-			if ($dataSettings['package']['country'] == 'PL') {
-				$dataSettings['package']['postcode'] = str_replace('-', '', $dataSettings['package']['postcode']);
-			}
-
             $serviceTax = $dpdApi->calculate($this->serviceId, $dataSettings, $addresses);
-	        $taxServiceRate = 'no';
+            $taxServiceRate = 'no';
             if ($serviceTax && !isset($serviceTax['error'])) {
                 $taxService = (float) $serviceTax['price']['total'];
                 if ($this->checkCountry($package['destination']['country'])) {
                     $taxServiceRate = 'yes';
                     if ($dataSettings['cod'] && DataZones::checkCustomPayment($package, $settings)) {
                         $taxService = $taxService - (float) $dataSettings['payment_tax'];
-	                }
+                    }
                 }
-
                 if ($dataSettings['courier_service_payer'] == 'RECIPIENT') {
-	                $taxServiceRate = 'no';
+                    $taxServiceRate = 'no';
                     /** 
                      * Recipient pay the tax.
                      */
@@ -241,9 +233,6 @@ class DPDRO_Service_Gateway_2212 extends WC_Shipping_Method
                 $code === 'GR' || // Grecia   -> ID WOO
                 $code === 'HU' || // Ungaria  -> ID WOO
                 $code === 'SK' || // Slovakia -> ID WOO
-                $code === 'CZ' || // CZECH REPUBLIC -> ID WOO
-                $code === 'SI' || // Slovenia -> ID WOO
-                $code === 'HR' || // HRVATSKA -> ID WOO
                 $code === 'PL'    // Polonia  -> ID WOO
             ) {
                 return true;

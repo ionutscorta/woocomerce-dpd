@@ -38,8 +38,8 @@ class DBGeneral
             `id` int(11) NOT NULL AUTO_INCREMENT,
 			`key` TEXT NOT NULL,
 			`value` TEXT NOT NULL,
-			`created_at` datetime NOT NULL DEFAULT NOW(),
-			`updated_at` datetime NOT NULL DEFAULT NOW(),
+			`created_at` datetime NOT NULL DEFAULT  CURRENT_TIMESTAMP,
+			`updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`)
         )");
         if ($this->wpdb->last_error) {

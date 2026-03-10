@@ -238,7 +238,7 @@ class LibraryApi
 		 */
 		$allowedCountryIds = [100, 300, 348, 616, 703, 705, 203, 191, 40, 380, 276, 724, 250, 528, 56, 208, 233, 442, 428, 440, 246, 620, 752, 642];
 		$country = $this->countryByID($options['package']['country']);
-		if (isset($country) && !empty($country) && in_array((int)$country['id'], $allowedCountryIds, true)) {
+		if (isset($country) && isset($country['id']) && in_array((int)$country['id'], $allowedCountryIds, true)) {
 			if ($options['client_contracts'] != '' && $options['client_contracts'] != '0') {
 				$parameters['data']['sender']['clientId'] = $options['client_contracts'];
 			}

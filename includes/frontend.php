@@ -4,6 +4,8 @@
  * Namespace: includes.
  */
 
+use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
+
 if (!defined('ABSPATH')) {
 	exit;
 }
@@ -42,6 +44,7 @@ class Frontend
 
 	private $apply;
 
+	private $initialized = false;
 
 	/**
 	 * Constructor.
@@ -73,14 +76,302 @@ class Frontend
 	 */
 	function init()
 	{
+		if ($this->initialized) {
+			return;
+		}
+
+
 		/**
 		 * Shipping.
 		 */
 		add_filter('woocommerce_form_field_text', array($this, 'checkoutFields'), 10, 2);
         add_filter('woocommerce_cart_shipping_packages', array($this, 'shippingPackages'));
-		add_action('woocommerce_checkout_update_order_review', array($this, 'updateOrderReview'));
+
+        add_action('woocommerce_checkout_update_order_review', array($this, 'updateOrderReview'));
 		add_action('woocommerce_checkout_update_order_meta', array($this, 'updateOrderMeta'));
-		add_action('wp_enqueue_scripts', array($this, 'enqueueScripts'));
+
+        add_action('woocommerce_checkout_update_order_review', function($posted_data) {
+            parse_str($posted_data, $data);
+            if (!empty($data['payment_method'])) {
+                WC()->session->set('chosen_payment_method', wc_clean($data['payment_method']));
+            }
+        });
+
+		add_action( 'wp_enqueue_scripts', function () {
+			if ( ! is_checkout() ) return;
+
+			// Only enqueue classic assets if NOT block checkout.
+			if ( $this->my_is_block_checkout_default() || $this->my_is_block_checkout_by_page_content() ) {
+				return;
+			}
+
+			$this->enqueueScripts();
+		}, 20 );
+
+
+
+		//blocks
+		add_action( 'enqueue_block_assets', function () {
+			// Only enqueue block assets if block checkout is active.
+			if ( ! ( $this->my_is_block_checkout_default() || $this->my_is_block_checkout_by_page_content() ) ) {
+				return;
+			}
+
+            $settings = $this->getSettings();
+
+            // Hide DPD pickup fields in blocks checkout
+            $hide_css = '
+                .wc-block-components-address-form__dpdro-pickup_id,
+                .wc-block-components-address-form__dpdro-pickup_type,
+                .wc-block-components-address-form__dpdro-pickup_name {
+                    display: none !important;
+                }
+                .dpdro-offices-map {
+                    grid-column: 1 / -1 !important;
+                    width: 100% !important;
+                }
+                .dpdro-offices-map iframe {
+                    width: 100% !important;
+                }
+            ';
+
+            // Also hide postcode when city dropdown is enabled (postcode auto-fills)
+			/*
+            if ($settings['city_dropdown'] === '1') {
+                $hide_css .= '
+                    .wc-block-components-address-form__postcode {
+                        display: none !important;
+                    }
+                ';
+            }
+
+            wp_add_inline_style( 'wp-block-library', $hide_css );
+			*/
+
+			$this->enqueueScripts();
+		}, 20 );
+		add_action( 'woocommerce_init', function () {
+			if ( ! function_exists( 'woocommerce_register_additional_checkout_field' ) ) {
+				return;
+			}
+
+			// Saved for both shipping & billing (address location).
+			woocommerce_register_additional_checkout_field( [
+				'id'         => 'dpdro/pickup_id',
+				'label'      => __( 'DPD RO office ID', 'dpdro' ),
+				'location'   => 'address',
+				'type'       => 'text',
+				'required'   => false,
+				'attributes' => [ 'data-dpdro' => 'pickup-id', 'style' => 'display:none' ],
+			] );
+
+
+			woocommerce_register_additional_checkout_field( [
+				'id'         => 'dpdro/pickup_type',
+				'label'      => __( 'DPD RO office type', 'dpdro' ),
+				'location'   => 'address',
+				'type'       => 'text',
+				'required'   => false,
+				'attributes' => [ 'data-dpdro' => 'pickup-type', 'style' => 'display:none' ],
+			] );
+
+			woocommerce_register_additional_checkout_field( [
+				'id'         => 'dpdro/pickup_name',
+				'label'      => __( 'DPD RO offices map', 'dpdro' ),
+				'location'   => 'address',
+				'type'       => 'text',
+				'required'   => false,
+				'attributes' => [
+					'data-dpdro'  => 'pickup-name',
+					'readonly'    => 'readonly',
+					'placeholder' => __( 'No office selected', 'dpdro' ),
+					'class'       => 'input-text js-dpdro-offices-name',
+				],
+			] );
+		} );
+
+        add_action('woocommerce_blocks_loaded', function () {
+            woocommerce_store_api_register_update_callback([
+                'namespace' => 'dpdro',
+                'callback' => function ($data) {
+                    // Invalidate cached shipping rates so calculate_shipping() is called on each method
+                    $packages = WC()->cart->get_shipping_packages();
+                    foreach ($packages as $package_key => $package) {
+                        $session_key = 'shipping_for_package_' . $package_key;
+                        WC()->session->set($session_key, false);
+                    }
+                    WC()->cart->calculate_shipping();
+                    WC()->cart->calculate_totals();
+                },
+            ]);
+        });
+		//equivalent for updateOrderReview when using blocks
+        $update_customer_callback = function( $customer, WP_REST_Request $request ) {
+			$p = (array) $request->get_params();
+
+			// Normalize address fields from either shipping_address or shippingAddress payload shapes.
+			$shipping_country  = $this->dpdro_extract_country_from_store_api( $p, 'shipping' );
+			$billing_country   = $this->dpdro_extract_country_from_store_api( $p, 'billing' );
+			$shipping_postcode = $this->dpdro_extract_postcode_from_store_api( $p, 'shipping' );
+			$billing_postcode  = $this->dpdro_extract_postcode_from_store_api( $p, 'billing' );
+			$shipping_state    = $this->dpdro_extract_state_from_store_api( $p, 'shipping' );
+            $shipping_city     = $this->dpdro_extract_city_from_store_api( $p, 'shipping' );
+            $billing_city      = $this->dpdro_extract_city_from_store_api( $p, 'billing' );
+			$billing_state     = $this->dpdro_extract_state_from_store_api( $p, 'billing' );
+            $shipping_address  = $this->dpdro_extract_address_1_from_store_api( $p, 'shipping' );
+            $billing_address   = $this->dpdro_extract_address_1_from_store_api( $p, 'billing' );
+
+
+            if ( $billing_postcode === '' && $shipping_postcode !== '' ) {
+				$billing_postcode = $shipping_postcode;
+			}
+			if ( $billing_state === '' && $shipping_state !== '' ) {
+				$billing_state = $shipping_state;
+			}
+
+            if ( $billing_city === '' && $shipping_city !== '' ) {
+                $billing_city = $shipping_city;
+            }
+            if ( $billing_address === '' && $shipping_address !== '' ) {
+                $billing_address = $shipping_address;
+            }
+			if ( $shipping_country !== '' ) {
+				if ( is_object( $customer ) && method_exists( $customer, 'set_shipping_country' ) ) {
+					$customer->set_shipping_country( $shipping_country );
+				}
+				if ( WC()->customer && method_exists( WC()->customer, 'set_shipping_country' ) ) {
+					WC()->customer->set_shipping_country( $shipping_country );
+				}
+			}
+
+			if ( $billing_country !== '' ) {
+				if ( is_object( $customer ) && method_exists( $customer, 'set_billing_country' ) ) {
+					$customer->set_billing_country( $billing_country );
+				}
+				if ( WC()->customer && method_exists( WC()->customer, 'set_billing_country' ) ) {
+					WC()->customer->set_billing_country( $billing_country );
+				}
+			}
+
+			if ( $shipping_postcode !== '' ) {
+				if ( is_object( $customer ) && method_exists( $customer, 'set_shipping_postcode' ) ) {
+					$customer->set_shipping_postcode( $shipping_postcode );
+				}
+				if ( WC()->customer && method_exists( WC()->customer, 'set_shipping_postcode' ) ) {
+					WC()->customer->set_shipping_postcode( $shipping_postcode );
+				}
+			}
+
+			if ( $billing_postcode !== '' ) {
+				if ( is_object( $customer ) && method_exists( $customer, 'set_billing_postcode' ) ) {
+					$customer->set_billing_postcode( $billing_postcode );
+				}
+				if ( WC()->customer && method_exists( WC()->customer, 'set_billing_postcode' ) ) {
+					WC()->customer->set_billing_postcode( $billing_postcode );
+				}
+			}
+
+			if ( $shipping_state !== '' ) {
+				if ( is_object( $customer ) && method_exists( $customer, 'set_shipping_state' ) ) {
+					$customer->set_shipping_state( $shipping_state );
+				}
+				if ( WC()->customer && method_exists( WC()->customer, 'set_shipping_state' ) ) {
+					WC()->customer->set_shipping_state( $shipping_state );
+				}
+			}
+
+            if ( $billing_state !== '' ) {
+                if ( is_object( $customer ) && method_exists( $customer, 'set_billing_state' ) ) {
+                    $customer->set_billing_state( $billing_state );
+                }
+                if ( WC()->customer && method_exists( WC()->customer, 'set_billing_state' ) ) {
+                    WC()->customer->set_billing_state( $billing_state );
+                }
+            }
+
+			if ( $billing_city !== '' ) {
+				if ( is_object( $customer ) && method_exists( $customer, 'set_billing_city' ) ) {
+					$customer->set_billing_city( $billing_city );
+				}
+				if ( WC()->customer && method_exists( WC()->customer, 'set_billing_city' ) ) {
+					WC()->customer->set_billing_city( $billing_city );
+				}
+			}
+
+            if ( $shipping_city !== '' ) {
+                if ( is_object( $customer ) && method_exists( $customer, 'set_shipping_city' ) ) {
+                    $customer->set_shipping_city( $shipping_city );
+                }
+                if ( WC()->customer && method_exists( WC()->customer, 'set_shipping_city' ) ) {
+                    WC()->customer->set_shipping_city( $shipping_city );
+                }
+            }
+
+            if ( $shipping_address !== '' ) {
+                if ( is_object( $customer ) && method_exists( $customer, 'set_shipping_address_1' ) ) {
+                    $customer->set_shipping_address_1( $shipping_address );
+                }
+                if ( WC()->customer && method_exists( WC()->customer, 'set_shipping_address_1' ) ) {
+                    WC()->customer->set_shipping_address_1( $shipping_address );
+                }
+            }
+
+            if ( $billing_address !== '' ) {
+                if ( is_object( $customer ) && method_exists( $customer, 'set_billing_address_1' ) ) {
+                    $customer->set_billing_address_1( $billing_address );
+                }
+                if ( WC()->customer && method_exists( WC()->customer, 'set_billing_address_1' ) ) {
+                    WC()->customer->set_billing_address_1( $billing_address );
+                }
+            }
+
+
+			// Keep session customer array aligned, as several Woo internals still read it directly.
+			if ( WC()->session ) {
+				$session_customer = WC()->session->get( 'customer' );
+				if ( ! is_array( $session_customer ) ) {
+					$session_customer = [];
+				}
+				if ( $shipping_country !== '' ) {
+					$session_customer['shipping_country'] = $shipping_country;
+				}
+				if ( $billing_country !== '' ) {
+					$session_customer['billing_country'] = $billing_country;
+					$session_customer['country'] = $billing_country;
+				}
+				if ( $shipping_postcode !== '' ) {
+					$session_customer['shipping_postcode'] = $shipping_postcode;
+				}
+				if ( $billing_postcode !== '' ) {
+					$session_customer['billing_postcode'] = $billing_postcode;
+					$session_customer['postcode'] = $billing_postcode;
+				}
+				if ( $shipping_state !== '' ) {
+					$session_customer['shipping_state'] = $shipping_state;
+				}
+				if ( $billing_state !== '' ) {
+					$session_customer['billing_state'] = $billing_state;
+					$session_customer['state'] = $billing_state;
+				}
+                if ( $shipping_address !== '' ) {
+                    $session_customer['shipping_address_1'] = $shipping_address;
+                }
+                if ( $billing_address !== '' ) {
+                    $session_customer['billing_address_1'] = $billing_address;
+                    $session_customer['address_1'] = $billing_address;
+                }
+				WC()->session->set( 'customer', $session_customer );
+			}
+		};
+
+		add_action( 'woocommerce_store_api_checkout_update_customer_from_request', $update_customer_callback, 10, 2 );
+		add_action( 'woocommerce_store_api_cart_update_customer_from_request', $update_customer_callback, 10, 2 );
+
+
+		// AJAX handler to update DPD session data (since Store API strips custom fields)
+		add_action( 'wp_ajax_dpdro_update_session', array( $this, 'ajax_update_session' ) );
+		add_action( 'wp_ajax_nopriv_dpdro_update_session', array( $this, 'ajax_update_session' ) );
+
 
 		/**
 		 * Payment.
@@ -94,6 +385,8 @@ class Frontend
 		 * Change position of city field.
 		 */
 		add_filter('woocommerce_default_address_fields', array($this, 'changeCityFieldPosition'));
+
+		$this->initialized = true;
 
     }
 
@@ -226,29 +519,47 @@ class Frontend
 			 * Check if WooCommerce is activated
 			 */
 			if (class_exists('woocommerce')) {
-				wp_enqueue_script('dpdro-script', plugin_dir_url(__FILE__) . '../assets/public/js/custom.js', array('jquery'), $this->version, true);
-				wp_localize_script('dpdro-script', 'dpdRo', array('ajaxurl' => admin_url('admin-ajax.php')));
+                $settings = $this->getSettings();
 
+
+
+                if ($settings['show_office_selection']  == "1") {
+                    wp_enqueue_script( 'dpdro-script', plugin_dir_url( __FILE__ ) . '../assets/public/js/custom.js', array( 'jquery' ), $this->version, true );
+                    wp_enqueue_script('dpdro-checkout-blocks', plugin_dir_url(__FILE__) . '../assets/public/js/dpdro-checkout-address.js', array('jquery'), $this->version, true);
+                    wp_localize_script('dpdro-checkout-blocks', 'dpdroData', [
+                        'pickup' => $GLOBALS['pickup'] ?? '',
+                        'pickupName' => $GLOBALS['pickupName'] ?? '',
+                        'pickupType' => $GLOBALS['pickupType'] ?? '',
+                        'iframeSrc' => 'https://services.dpd.ro/office_locator_widget_v3/office_locator.php?lang=en&showAddressForm=0&showOfficesList=0&selectOfficeButtonCaption=Select this office',
+                        'label' => __('DPD RO offices map', 'dpdro'),
+                        'noOffice' => __('No office selected', 'dpdro'),
+                    ]);
+                } else {
+                    wp_enqueue_script( 'dpdro-script', plugin_dir_url( __FILE__ ) . '../assets/public/js/dpd.js', array( 'jquery' ), $this->version, true );
+                }
 				/** 
 				 * Data
 				 */
-				$data = array(
-					'textNoOfficeSelected' => __('No office selected', 'dpdro'),
-					'noneSearchCity'       => wp_create_nonce('dpdro_search_city'),
-				);
-				wp_localize_script('dpdro-script', 'dpdRoGeneral', $data);
+                $data = array(
+                    'textNoOfficeSelected' => __('No office selected', 'dpdro'),
+                    'noneSearchCity'       => wp_create_nonce('dpdro_search_city'),
+                    'mapEnabled' => $settings['show_office_selection']
+                );
+                wp_localize_script('dpdro-script', 'dpdRoGeneral', $data);
+                wp_localize_script( 'dpdro-script', 'dpdRo', array( 'ajaxurl' => admin_url( 'admin-ajax.php' ) ) );
+
+				if ($settings['city_dropdown']&& (is_cart() || is_checkout() || is_wc_endpoint_url('edit-address'))) {
+					wp_enqueue_script('dpd-city-select', plugin_dir_url(__FILE__)  . '../assets/public/js/city-select.js', ['jquery', 'woocommerce'], $this->version, true);
+
+					wp_localize_script('dpd-city-select', 'dpd_wc_city_select_params', [
+						'cities' => $this->getCities(),
+						'i18n_select_city_text' => esc_attr__('Select an option&hellip;', 'woocommerce'),
+					]);
+				}
 			}
 		}
 
-        $settings = $this->getSettings();
-        if ($settings['city_dropdown']&& (is_cart() || is_checkout() || is_wc_endpoint_url('edit-address'))) {
-            wp_enqueue_script('dpd-city-select', plugin_dir_url(__FILE__)  . '../assets/public/js/city-select.js', ['jquery', 'woocommerce'], $this->version, true);
 
-            wp_localize_script('dpd-city-select', 'dpd_wc_city_select_params', [
-                'cities' => $this->getCities(),
-                'i18n_select_city_text' => esc_attr__('Select an option&hellip;', 'woocommerce'),
-            ]);
-        }
 	}
 
 	/**
@@ -321,7 +632,21 @@ class Frontend
 		if (!empty($this->apply)) {
 			return $this->apply;
 		}
-		if ($this->checkCountry(WC()->customer->get_shipping_country())) {
+
+		$country = "";
+		if ( function_exists('WC') && WC() ) {
+			if ( WC()->customer ) {
+				$country = WC()->customer->get_shipping_country();
+			} elseif ( WC()->session ) {
+				// Try reading from the session customer array (works often in blocks)
+				$customer = WC()->session->get( 'customer' );
+				if ( is_array( $customer ) ) {
+					$country = $customer['shipping_country'] ?? ( $customer['country'] ?? '' );
+				}
+			}
+		}
+
+		if ($this->checkCountry($country)) {
 			$chosenGateway = WC()->session->get('chosen_shipping_methods');
 			if (
 				isset($chosenGateway[0]) &&
@@ -549,5 +874,183 @@ class Frontend
         }
     }
 
+	/**
+	 * Extract DPDRO fields from the Store API payload for an address group.
+	 * Primary (your site): $p['shipping_address']['dpdro/pickup_id|...']
+	 * Fallbacks: extensions => dpdro => { pickup_* } or extensions['dpdro/pickup_*']
+	 */
+	private function dpdro_get_store_api_address_payload( array $p, string $group = 'shipping' ) : array {
+		$snake = "{$group}_address";
+		$camel = "{$group}Address";
+
+		$addr = $p[ $snake ] ?? $p[ $camel ] ?? [];
+		return is_array( $addr ) ? $addr : [];
+	}
+
+	private function dpdro_extract_postcode_from_store_api( array $p, string $group = 'shipping' ) : string {
+		$addr = $this->dpdro_get_store_api_address_payload( $p, $group );
+		if ( isset( $addr['postcode'] ) && $addr['postcode'] !== '' ) {
+			return sanitize_text_field( (string) $addr['postcode'] );
+		}
+		return '';
+	}
+	private function dpdro_extract_country_from_store_api( array $p, string $group = 'shipping' ) : string {
+		$addr = $this->dpdro_get_store_api_address_payload( $p, $group );
+		if ( isset( $addr['country'] ) && $addr['country'] !== '' ) {
+			return sanitize_text_field( (string) $addr['country'] );
+		}
+		return '';
+	}
+
+	private function dpdro_extract_state_from_store_api( array $p, string $group = 'shipping' ) : string {
+		$addr = $this->dpdro_get_store_api_address_payload( $p, $group );
+		if ( isset( $addr['state'] ) && $addr['state'] !== '' ) {
+			return sanitize_text_field( (string) $addr['state'] );
+		}
+		return '';
+	}
+
+    private function dpdro_extract_city_from_store_api( array $p, string $group = 'shipping' ) : string {
+        $addr = $this->dpdro_get_store_api_address_payload( $p, $group );
+        if ( isset( $addr['city'] ) && $addr['city'] !== '' ) {
+            return sanitize_text_field( (string) $addr['city'] );
+        }
+        return '';
+    }
+
+    private function dpdro_extract_address_1_from_store_api( array $p, string $group = 'shipping' ) : string {
+        $addr = $this->dpdro_get_store_api_address_payload( $p, $group );
+        if ( isset( $addr['address_1'] ) && $addr['address_1'] !== '' ) {
+            return sanitize_text_field( (string) $addr['address_1'] );
+        }
+        return '';
+    }
+
+
+	function dpdro_extract_from_store_api( array $p, string $group = 'shipping' ) : array {
+		$out  = [ 'pickup_id' => '', 'pickup_name' => '', 'pickup_type' => '' ];
+		$addr = $this->dpdro_get_store_api_address_payload( $p, $group );
+		if ( ! is_array( $addr ) ) {
+			return $out;
+		}
+
+		// 1) Preferred on your install: fully-qualified keys on the address.
+		foreach ( [ 'pickup_id', 'pickup_name', 'pickup_type' ] as $k ) {
+			$fq = "dpdro/{$k}";
+			if ( isset( $addr[ $fq ] ) && $addr[ $fq ] !== '' ) {
+				$out[ $k ] = $addr[ $fq ];
+			}
+		}
+
+		// 2) Fallback: address.extensions.dpdro.{pickup_*}
+		if ( isset( $addr['extensions']['dpdro'] ) && is_array( $addr['extensions']['dpdro'] ) ) {
+			foreach ( [ 'pickup_id', 'pickup_name', 'pickup_type' ] as $k ) {
+				if ( $out[ $k ] === '' && isset( $addr['extensions']['dpdro'][ $k ] ) ) {
+					$out[ $k ] = $addr['extensions']['dpdro'][ $k ];
+				}
+			}
+		}
+
+		// 3) Fallback: address.extensions['dpdro/pickup_*']
+		if ( isset( $addr['extensions'] ) && is_array( $addr['extensions'] ) ) {
+			foreach ( [ 'pickup_id', 'pickup_name', 'pickup_type' ] as $k ) {
+				$fq = "dpdro/{$k}";
+				if ( $out[ $k ] === '' && isset( $addr['extensions'][ $fq ] ) ) {
+					$out[ $k ] = $addr['extensions'][ $fq ];
+				}
+			}
+		}
+
+		return array_map( 'sanitize_text_field', $out );
+	}
+
+	function my_is_block_checkout_default(): bool {
+		return class_exists( CartCheckoutUtils::class )
+		       && CartCheckoutUtils::is_checkout_block_default();
+	}
+
+	function my_is_block_checkout_by_page_content(): bool {
+		if ( ! function_exists( 'wc_get_page_id' ) ) return false;
+
+		$checkout_id = wc_get_page_id( 'checkout' );
+		if ( ! $checkout_id || $checkout_id <= 0 ) return false;
+
+		// WC_Blocks_Utils::has_block_in_page() exists in some versions.
+		if ( class_exists( 'WC_Blocks_Utils' ) && method_exists( 'WC_Blocks_Utils', 'has_block_in_page' ) ) {
+			return WC_Blocks_Utils::has_block_in_page( $checkout_id, 'woocommerce/checkout' );
+		}
+
+		// Generic WP fallback:
+		$content = get_post_field( 'post_content', $checkout_id );
+		return function_exists( 'has_block' ) && has_block( 'woocommerce/checkout', $content );
+	}
+
+	/**
+	 * AJAX handler to update DPD session data for blocks checkout
+	 */
+	public function ajax_update_session() {
+		// Verify nonce
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], 'dpdro_search_city' ) ) {
+			error_log('[DPD] AJAX update session - nonce verification failed');
+			wp_send_json_error( 'Invalid nonce' );
+			return;
+		}
+
+		$pickup_id = isset( $_POST['pickup_id'] ) ? sanitize_text_field( $_POST['pickup_id'] ) : '';
+		$pickup_name = isset( $_POST['pickup_name'] ) ? sanitize_text_field( $_POST['pickup_name'] ) : '';
+		$pickup_type = isset( $_POST['pickup_type'] ) ? sanitize_text_field( $_POST['pickup_type'] ) : '';
+
+        $address = isset( $_POST['address'] ) ? sanitize_text_field( $_POST['address'] ) : '';
+		$mirrorToBilling = isset( $_POST['mirror_to_billing'] ) ? sanitize_text_field( $_POST['mirror_to_billing'] ) : 0;
+		$change = false;
+        if ( WC()->customer && method_exists( WC()->customer, 'set_shipping_address_1' ) && $address !== '' ) {
+            WC()->customer->set_shipping_address_1($address);
+			$change = true;
+        }
+
+		 if ($mirrorToBilling && WC()->customer && method_exists( WC()->customer, 'set_billing_address_1' ) && $address !== '' ) {
+            WC()->customer->set_billing_address_1($address);
+			$change = true;
+        }
+
+		if ($change) {
+			 WC()->customer->save();
+		}
+
+		error_log('[DPD] AJAX update session - pickup_id: ' . $pickup_id . ', pickup_name: ' . $pickup_name . ', pickup_type: ' . $address .  "address");
+
+		// Set session variables
+		WC()->session->set( 'dpdro_office_id', $pickup_id );
+		WC()->session->set( 'dpdro_office_name', $pickup_name );
+		WC()->session->set( 'dpdro_office_type', $pickup_type );
+
+		// Flag when pickup was explicitly cleared, so update_customer_callback
+		// doesn't overwrite with stale Blocks store values
+		if ( $pickup_id === '' ) {
+			WC()->session->set( 'dpdro_pickup_cleared', true );
+		} else {
+			WC()->session->set( 'dpdro_pickup_cleared', false );
+		}
+
+        $order_id = 0;
+		if ( WC()->session ) {
+			$order_id = isset( WC()->session->order_awaiting_payment )
+				? absint( WC()->session->order_awaiting_payment )
+				: absint( WC()->session->get( 'store_api_draft_order', 0 ) ); // blocks draft order
+		}
+
+		if ( $order_id > 0 ) {
+			update_post_meta( $order_id, 'dpdro_pickup', $pickup_id );
+			update_post_meta( $order_id, 'dpdro_pickup_name', $pickup_name );
+			update_post_meta( $order_id, 'dpdro_pickup_type', $pickup_type );
+		}
+
+		wp_send_json_success( array(
+			'message' => 'Session updated',
+			'pickup_id' => $pickup_id,
+			'pickup_name' => $pickup_name,
+			'pickup_type' => $pickup_type
+		) );
+	}
 
 }

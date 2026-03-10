@@ -475,7 +475,7 @@ class WooOrder
                     if ($orderShipment && !empty($orderShipment) && $orderShipping && !empty($orderShipping)) {
                         if ($orderRequestCourier && !empty($orderRequestCourier)) {
                             $orderShipmentLabels = admin_url('admin.php/dpdro_print?print=labels&id=' . absint($order->id));
-                            echo '
+	                       echo '
                                 <a href="' . $orderShipmentLabels . '" title="' . __('Print labels for order without DPD RO shipping method', 'dpdro') . '" type="button" class="d-button icon d-mb warning">
                                     <i class="dashicons dashicons-printer"></i>
                                 </a>
@@ -1479,7 +1479,8 @@ class WooOrder
 					(
 						$addressData->status == 'skip' ||
 						$addressData->status == 'validated' ||
-						($addressData->method === 'pickup'&& $addressData->status == 'unset' )
+                        $addressData->status == 'unset' || //hmmm
+                        ($addressData->method === 'pickup'&& $addressData->status == 'unset' )
 					) &&
 					(
 						$order->get_shipping_country() == 'RO' ||
@@ -1517,7 +1518,7 @@ class WooOrder
                             $requestData['recipient']['address']['siteName'] = $this->removeDiactritics($addressData->address_city_name);
                         }
                     }
-                    if ($addressData->status && !empty($addressData->status) && $addressData->status == 'skip') {
+                    if ($addressData->status && !empty($addressData->status) && $addressData->status == 'skip' || $addressData->status == 'unset' ) {
                         $requestData['recipient']['address']['addressNote'] = $this->removeDiactritics($order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2());
                     } else {
                         if (isset($addressData->address_street_id) &&  !empty($addressData->address_street_id)) {
@@ -1582,7 +1583,7 @@ class WooOrder
              * Shipment
              */
             $shipment = $libraryApi->createShipment($requestData);
-            if (!is_array($shipment) || empty($shipment) || array_key_exists('error', $shipment)) {
+                if (!is_array($shipment) || empty($shipment) || array_key_exists('error', $shipment)) {
                 $errorMessage = $shipment['error']['message'];
                 $errorContext = $shipment['error']['context'];
             } else {
@@ -2378,7 +2379,7 @@ class WooOrder
             // $order = wc_get_order($params['orderId']);
 
             // /**
-            //  * Array for tax calculations
+            //  * Array for tax calculationsZ
             //  */
             // $calculateTaxFor = array(
             //     'country'  => $order->get_shipping_country(),

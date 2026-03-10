@@ -89,8 +89,9 @@ class WooApi
 			}
 		}
 		$parcels = [];
-		//if ($serviceId != 2303  && ($serviceId == 2212 && ($country == 'HU' || $country == 'BG')) && ($serviceId == '2412' || $packagingMethod == 'all')) {
-			if ($serviceId != 2303  && (($serviceId == 2212 && ($country == 'HU' || $country == 'BG')) || $serviceId == '2412' || $packagingMethod == 'all')) {
+
+		if ($serviceId != 2303  && (($serviceId == 2212 && ($country == 'HU' || $country == 'BG')) || $serviceId == '2412' || $packagingMethod == 'all')) {
+
 			$index = 0;
 			$seqNo = 1;
 			foreach ($productsShipping as $product) {
@@ -153,7 +154,7 @@ class WooApi
 						$parcels[$index] = [
 							'seqNo'  => (int) $seqNo,
 							'weight' => (float) $weight,
-							'size' => $groupedDimensions[$index]
+							'size' => (isset($groupedDimensions[$index])) ? $groupedDimensions[$index] : null
 						];
 						$index++;
 						$seqNo++;

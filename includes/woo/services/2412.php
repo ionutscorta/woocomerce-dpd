@@ -168,10 +168,10 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
             if ($serviceTax && !isset($serviceTax['error'])) {
                 $taxService = (float) $serviceTax['price']['total'];
                 if ($this->checkCountry($package['destination']['country'])) {
+                    $taxServiceRate = 'yes';
                     if ($dataSettings['cod'] && DataZones::checkCustomPayment($package, $settings)) {
                         $taxService = $taxService - (float) $dataSettings['payment_tax'];
-	                    $taxServiceRate = 'yes';
-                    }
+	                }
                 }
 
                 if ($dataSettings['courier_service_payer'] == 'RECIPIENT') {

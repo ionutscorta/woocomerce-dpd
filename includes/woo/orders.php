@@ -18,6 +18,9 @@ class WooOrders
      */
     private $wpdb;
 
+	static $rendered = [];
+
+    private $initialized = false;
     /** 
      * Constructor.
      */
@@ -32,11 +35,37 @@ class WooOrders
      */
     function init()
     {
-
+        if ($this->initialized) {
+            return;
+        }
+        $this->initialized = true;
         if (class_exists('Automattic\WooCommerce\Utilities\OrderUtil') && OrderUtil::custom_orders_table_usage_is_enabled() ) {
             add_filter( 'woocommerce_shop_order_list_table_columns', array($this, 'loadOrdersActions'));
             add_filter('woocommerce_shop_order_list_table_columns', array($this, 'loadOrdersActionsSortable'));
-            add_action('woocommerce_shop_order_list_table_custom_column',  array($this, 'loadOrdersActionsContent'), 10, 2);
+           // add_action('woocommerce_shop_order_list_table_custom_column',  array($this, 'loadOrdersActionsContent'), 10, 2);
+	        add_action( 'woocommerce_shop_order_list_table_custom_column', function( $column, $order ) {
+		        if ( 'dpdro' !== $column ) {
+			        return;
+		        }
+
+		        // If user hid this column in Screen Options, do nothing.
+		        $screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		        if ( $screen ) {
+			        $hidden = get_hidden_columns( $screen ); // WP per-user hidden columns.
+			        if ( in_array( 'dpdro', $hidden, true ) ) {
+				        return;
+			        }
+		        }
+
+		        // Your value output (adjust meta key / retrieval as needed).
+		        $value = is_callable( [ $order, 'get_meta' ] )
+			        ? $order->get_meta( '_dpdro' )
+			        : '';
+
+		        //echo esc_html( (string) $value );
+		        $this->loadOrdersActionsContent($column, $order);
+
+	        }, 10, 2 );
             add_action( 'woocommerce_order_list_table_extra_tablenav', array($this, 'loadOrdersActionsModalHPOS'), 20, 2);
 
 
@@ -44,9 +73,41 @@ class WooOrders
             // Traditional CPT-based orders are in use.
             add_filter('manage_edit-shop_order_columns', array($this, 'loadOrdersActions'));
             add_filter('manage_edit-shop_order_sortable_columns', array($this, 'loadOrdersActionsSortable'));
-            add_action('manage_shop_order_posts_custom_column', array($this, 'loadOrdersActionsContent'), 2);
+            //add_action('manage_shop_order_posts_custom_column', array($this, 'loadOrdersActionsContent'), 2);
+			add_action( 'manage_shop_order_posts_custom_column', function( $column, $post_id ) {
+    	        if ( 'dpdro' !== $column ) {
+			        return;
+		        }
+
+		        $screen = function_exists('get_current_screen') ? get_current_screen() : null;
+
+		        // Only apply on legacy orders screen
+		        if ( ! $screen || $screen->id !== 'edit-shop_order' ) {
+			        return;
+		        }
+
+		        // If hidden in Screen Options, don't output anything
+		        $hidden = get_hidden_columns( $screen );
+		        if ( in_array( 'dpdro', $hidden, true ) ) {
+			        echo ""; return;
+		        }
+
+
+				$key = $post_id . ':' . $column;
+
+				// ✅ If this cell already rendered once, don't render again
+				if ( isset( static::$rendered[ $key ] ) ) return;
+				static::$rendered[ $key ] = true;
+
+
+				//echo esc_html( (string) get_post_meta( $post_id, '_dpdro', true ) );
+		        $order = wc_get_order($post_id);
+		        $this->loadOrdersActionsContent($column, $order);
+	        }, 2, 2);
             add_action('manage_posts_extra_tablenav',  array($this, 'loadOrdersActionsModal'), 20, 1);
         }
+
+
     }
 
 

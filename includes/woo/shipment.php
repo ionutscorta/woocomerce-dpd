@@ -609,7 +609,7 @@ $settings = $dataSettings->getSettings();
         <?php if ($checkCountry) : ?>
             <?php if ($orderAddress && !empty($orderAddress)) : ?>
                 <?php if ($orderAddress->method != 'pickup') : ?>
-                    <?php if ($orderAddress->status == 'skip' || $orderAddress->status == 'validated') : ?>
+                    <?php if ($orderAddress->status == 'skip' || $orderAddress->status == 'validated' || 1 == 1) : ?>
                         <button type="button" class="d-button secondary js-d-modal-close">
                             <?php _e('Cancel', 'dpdro'); ?>
                         </button>

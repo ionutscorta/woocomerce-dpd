@@ -52,6 +52,6 @@ class DataSettings
         foreach ($settings as $setting) {
             $response[$setting->key] = $setting->value;
         }
-        return $response;
+         return $response;
     }
 }

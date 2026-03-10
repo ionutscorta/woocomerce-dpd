@@ -434,6 +434,7 @@
                 });
             });
             data['params']['payment_zones'] = JSON.stringify(data['params']['payment_zones']);
+            console.log("data", data);
             jQuery.ajax({
                 type: 'post',
                 dataType: 'json',
