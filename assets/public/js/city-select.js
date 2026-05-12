@@ -208,8 +208,11 @@ jQuery(function ($) {
     });
 
 
-    $(document.body).on('change', 'select.city_select', function () {
+    $(document.body).on('change', 'select.city_select', function (e) {
         var $container = $(this).closest('.form-row').parent();
+        // True when a human caused the change (click/keyboard). jQuery synthetic
+        // .trigger('change') sets isTrigger and leaves originalEvent undefined.
+        var isUserEvent = !!(e && e.originalEvent);
 
         // detect step (shipping vs billing)
         let step = 'billing';
@@ -251,7 +254,12 @@ jQuery(function ($) {
                 console.log("suppressUntil", suppressUntil);
                 console.log("inProgrammaticWindow", inProgrammaticWindow);
 
-                if (inProgrammaticWindow && expectedPc && nextPc && nextPc !== expectedPc) {
+                // Suppression exists to filter out stale postcode emissions from
+                // synthetic option-rebuild changes inside cityToSelect. A real user
+                // pick must always win — otherwise switching state (e.g. IF -> B)
+                // and clicking Bucureşti within the 4s window keeps the previous
+                // city's postcode instead of 010011.
+                if (!isUserEvent && inProgrammaticWindow && expectedPc && nextPc && nextPc !== expectedPc) {
                     console.log('[DPD][DBG] city-select ignoring stale postcode during programmatic window', {
                         step: step,
                         emitted: nextPc,

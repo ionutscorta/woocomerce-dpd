@@ -3498,7 +3498,7 @@ return [
 			[_x('Zizin', 'BV', 'dpd-city-select'), 507223]
 		],
 		'B' => [
-			_x('Bucureşti', 'B', 'dpd-city-select', 010011),
+			[_x('Bucureşti', 'B', 'dpd-city-select'), '010011'],
 		],
 		'BZ' => [
 			[_x('Albeşti', 'BZ', 'dpd-city-select'), 127596],

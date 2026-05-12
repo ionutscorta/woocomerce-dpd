@@ -90,7 +90,7 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
              */
             global $wpdb;
 
-            /** 
+            /**
              * Data settings.
              */
             $settings = new DataSettings($wpdb);
@@ -125,7 +125,7 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
                 'postcode' => $package['destination']['postcode'],
             ];
 
-            /** 
+            /**
              * User.
              */
             $dataSettings['customer_phone'] = false;
@@ -135,48 +135,48 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
                 $dataSettings['customer_email'] = get_user_meta($package['user']['ID'], 'billing_email', true);
             }
 
-            /** 
+            /**
              * WooCommerce api.
              */
             $wooApi = new WooApi($wpdb, $package, $dataSettings);
             $dataSettings['total_weight'] = $wooApi->totalWeight();
             $dataSettings['parcels'] = $wooApi->prepareParcels($this->serviceId, $dataSettings['packaging_method']);
 
-            /** 
+            /**
              * Payment.
              */
             $dataSettings['cod'] = false;
             if (isset($dataSettings['chosen_payment']) && $dataSettings['chosen_payment'] === 'cod') {
 
-                /** 
+                /**
                  * Data zones.
                  */
                 $dataSettings['cod'] = DataZones::zoneMatchingPackage($package, $settings);
             }
 
-            /** 
+            /**
              * Data settings.
              */
             $addresses = new DataAddresses($wpdb);
 
-            /** 
+            /**
              * Library api.
              */
             $dpdApi = new LibraryApi($dataSettings['username'], $dataSettings['password']);
             $serviceTax = $dpdApi->calculate($this->serviceId, $dataSettings, $addresses);
-	        $taxServiceRate = 'no';
+            $taxServiceRate = 'no';
             if ($serviceTax && !isset($serviceTax['error'])) {
                 $taxService = (float) $serviceTax['price']['total'];
                 if ($this->checkCountry($package['destination']['country'])) {
                     $taxServiceRate = 'yes';
                     if ($dataSettings['cod'] && DataZones::checkCustomPayment($package, $settings)) {
                         $taxService = $taxService - (float) $dataSettings['payment_tax'];
-	                }
+                    }
                 }
 
                 if ($dataSettings['courier_service_payer'] == 'RECIPIENT') {
-	                $taxServiceRate = 'no';
-                    /** 
+                    $taxServiceRate = 'no';
+                    /**
                      * Recipient pay the tax.
                      */
                 } else {
@@ -204,13 +204,13 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
                     }
                 }
 
-                /** 
+                /**
                  * Set values tax and tax rate on session.
                  */
                 WC()->session->set('dpdro_shipping_tax_' . $this->serviceId, $taxService);
                 WC()->session->set('dpdro_shipping_tax_rate_' . $this->serviceId, $taxServiceRate);
 
-                /** 
+                /**
                  * Add tax to serrvice.
                  */
                 $this->add_rate(array(
@@ -222,7 +222,7 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
         }
     }
 
-    /** 
+    /**
      * Check country.
      */
     public function checkCountry($code = false)
@@ -234,6 +234,9 @@ class DPDRO_Service_Gateway_2412 extends WC_Shipping_Method
                 $code === 'GR' || // Grecia   -> ID WOO
                 $code === 'HU' || // Ungaria  -> ID WOO
                 $code === 'SK' || // Slovakia -> ID WOO
+                $code === 'CZ' || // CZECH REPUBLIC -> ID WOO
+                $code === 'SI' || // Slovenia -> ID WOO
+                $code === 'HR' || // HRVATSKA -> ID WOO
                 $code === 'PL'    // Polonia  -> ID WOO
             ) {
                 return true;

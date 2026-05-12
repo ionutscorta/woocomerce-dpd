@@ -492,9 +492,15 @@ function dpdroLog(enable, type, ...args) {
         const stateFromClassic = ($(`[name="${step}_state"]`).val() ?? '').toString().trim();
         const stateFromBlocksValue = ($(`[id="${step}-state"]`).val() ?? '').toString().trim();
         const stateFromBlocksLabel = ($(`[id="${step}-state"] option:selected`).text() ?? '').toString().trim();
+        // In Blocks, the WC data store holds the canonical state abbreviation (e.g. "IF"),
+        // while the DOM may lag or expose only the localized label ("Ilfov").
+        const stateFromStore = (
+            window.wp?.data?.select?.('wc/store/cart')
+                ?.getCustomerData?.()?.[step + 'Address']?.state ?? ''
+        ).toString().trim();
         let state = '';
         if (window.isBlocksCheckout) {
-            state = stateFromBlocksValue || stateFromBlocksLabel || stateFromClassic;
+            state = stateFromStore || stateFromBlocksValue || stateFromBlocksLabel || stateFromClassic;
         } else {
             state = stateFromClassic || stateFromBlocksLabel || stateFromBlocksValue;
         }

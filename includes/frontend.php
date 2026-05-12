@@ -860,6 +860,23 @@ class Frontend
                                 }
                             }
                             $cities = array_merge($cities, $cleaned_ro_cities);
+
+                            // Normalize RO postcodes to 6-digit strings.
+                            // Why: library/cities/RO.php stores postcodes as PHP int literals (e.g. 77005),
+                            // which silently drops the leading "0" required by Ilfov (IF) and other RO regions.
+                            // Without padding, data-postcode in the city dropdown, the WC postcode field, and
+                            // downstream shipping/AWB lookups all see "77005" instead of "077005".
+                            if (!empty($cities['RO']) && is_array($cities['RO'])) {
+                                foreach ($cities['RO'] as $abbr => &$_cities) {
+                                    foreach ($_cities as &$_city) {
+                                        if (is_array($_city) && isset($_city[1])) {
+                                            $_city[1] = str_pad((string) $_city[1], 6, '0', STR_PAD_LEFT);
+                                        }
+                                    }
+                                    unset($_city);
+                                }
+                                unset($_cities);
+                            }
                         }
                     }
                 }
