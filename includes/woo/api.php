@@ -35,7 +35,17 @@ class WooApi
 		$this->options = $options;
 	}
 
-	/** 
+	/**
+	 * Round a kg weight to the precision accepted by the DPD API (2 decimals,
+	 * 0.00 - 999.99). Without this, repeated float additions emit values like
+	 * 1.2000000000000002 which the API rejects (MSG533).
+	 */
+	private static function normalizeWeight($weight)
+	{
+		return round((float) $weight, 2);
+	}
+
+	/**
 	 * Total weight.
 	 */
 	public function totalWeight()
@@ -59,7 +69,7 @@ class WooApi
 				}
 			}
 		}
-		return $totalWeight;
+		return self::normalizeWeight($totalWeight);
 	}
 
 	/** 
@@ -98,7 +108,7 @@ class WooApi
 				if ($product['weight'] > 0) {
 					$parcels[$index] = [
 						'seqNo'  => (int) $seqNo,
-						'weight' => (float) $product['weight'],
+						'weight' => self::normalizeWeight($product['weight']),
 						'size'   => [
 							'width' => (float) $product['width'],
 							'depth' => (float) $product['depth'],
@@ -153,7 +163,7 @@ class WooApi
 					if ($weight > 0) {
 						$parcels[$index] = [
 							'seqNo'  => (int) $seqNo,
-							'weight' => (float) $weight,
+							'weight' => self::normalizeWeight($weight),
 							'size' => (isset($groupedDimensions[$index])) ? $groupedDimensions[$index] : null
 						];
 						$index++;

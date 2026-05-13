@@ -112,7 +112,7 @@ $settings = $dataSettings->getSettings();
                     $productWeight = $productWeight == '0' ? '0.001' : $productWeight;
                     $productQuantity = $productData['quantity'];
                     for ($i = 0; $i < (int) $productQuantity; $i++) {
-                        $settings['total_weight'] = $settings['total_weight'] + $productWeight;
+                        $settings['total_weight'] = round($settings['total_weight'] + $productWeight, 2);
                         array_push($productsData, [
                             'weight' => $productWeight,
                             'width'  => method_exists($productInfo, 'get_width') ? $productInfo->get_width() : 0,
@@ -164,7 +164,7 @@ $settings = $dataSettings->getSettings();
                             if ($product['weight'] > 0) {
                                 $settings['parcels'][$index] = [
                                     'seqNo'  => (int) $seqNo,
-                                    'weight' => (float) $product['weight'],
+                                    'weight' => round((float) $product['weight'], 2),
                                     'size'   => [
                                         'width' => (float) $product['width'],
                                         'depth' => (float) $product['depth'],
@@ -219,7 +219,7 @@ $settings = $dataSettings->getSettings();
                                 if ($weight > 0) {
                                     $settings['parcels'][$index] = [
                                         'seqNo'  => (int) $seqNo,
-                                        'weight' => (float) $weight,
+                                        'weight' => round((float) $weight, 2),
                                         'size' => $groupedDimensions[$index]
                                     ];
                                     $index++;

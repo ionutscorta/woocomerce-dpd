@@ -129,6 +129,20 @@ class LibraryApi
 	}
 
 	/**
+	 * Normalize a postcode for DPD per country rules.
+	 * Currently: Poland uses the XX-XXX format locally, but the DPD API
+	 * expects the 5-digit form (no dash). Other countries pass through.
+	 */
+	private function formatPostcode($country, $postcode)
+	{
+		$postcode = trim((string) $postcode);
+		if (is_array($country) && isset($country['isoAlpha2']) && $country['isoAlpha2'] === 'PL') {
+			$postcode = str_replace('-', '', $postcode);
+		}
+		return $postcode;
+	}
+
+	/**
 	 * Set cache.
 	 */
 	private function setCache($key, $data)
@@ -265,7 +279,7 @@ class LibraryApi
 					} else {
 						$parameters['data']['recipient']['addressLocation']['siteName'] = (string) $options['package']['city'];
 						if (array_key_exists('postCodeFormats', $country) && !empty($country['postCodeFormats']) && is_array($country['postCodeFormats'])) {
-							$parameters['data']['recipient']['addressLocation']['postCode'] = (string) $options['package']['postcode'];
+							$parameters['data']['recipient']['addressLocation']['postCode'] = $this->formatPostcode($country, $options['package']['postcode']);
 						}
 					}
 				}
@@ -279,7 +293,7 @@ class LibraryApi
 				'privatePerson' => true
 			];
 			if (array_key_exists('postCodeFormats', $country) && !empty($country['postCodeFormats']) && is_array($country['postCodeFormats'])) {
-				$parameters['data']['recipient']['addressLocation']['postCode'] = (string) $options['package']['postcode'];
+				$parameters['data']['recipient']['addressLocation']['postCode'] = $this->formatPostcode($country, $options['package']['postcode']);
 			}
 		}
 
@@ -457,7 +471,7 @@ class LibraryApi
 			$parameters['data']['address']['countryId'] = $countryData['id'];
 			if (array_key_exists('postCodeFormats', $countryData) && !empty($countryData['postCodeFormats']) && is_array($countryData['postCodeFormats'])) {
 				if ($address['postcode'] && !empty($address['postcode'])) {
-					$parameters['data']['address']['postCode'] = trim($address['postcode']);
+					$parameters['data']['address']['postCode'] = $this->formatPostcode($countryData, $address['postcode']);
 				}
 			}
 		}

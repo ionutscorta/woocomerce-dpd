@@ -1263,7 +1263,7 @@ class WooOrder
                     foreach ($params['products'] as $product) {
                         $requestData['content']['parcels'][] = [
                             'seqNo'  => (int) $seqNo,
-                            'weight' => (float) $product['weight'],
+                            'weight' => round((float) $product['weight'], 2),
                             'size'   => [
                                 'width' => (float) $product['width'],
                                 'depth' => (float) $product['depth'],
@@ -1299,7 +1299,7 @@ class WooOrder
                     foreach ($parcels as $key => $parcel) {
                         $productParcel = [
                             'seqNo' => (int) $key,
-                            'weight' => floatval($parcel),
+                            'weight' => round(floatval($parcel), 2),
                             'size'   => [
 	                            'width' => (float) $width,
 	                            'depth' => (float) $depth,
@@ -1321,7 +1321,7 @@ class WooOrder
                         }
                         $parcelsTotalWeight = $parcelsTotalWeight + $requestData['content']['parcels'][$key]['weight'];
                     }
-                    $requestData['content']['totalWeight'] = $parcelsTotalWeight;
+                    $requestData['content']['totalWeight'] = round($parcelsTotalWeight, 2);
                 }
             }
 
@@ -1504,10 +1504,11 @@ class WooOrder
                         $requestData['recipient']['address']['countryId'] = $countryData['id'];
                         if (array_key_exists('postCodeFormats', $countryData) && !empty($countryData['postCodeFormats']) && is_array($countryData['postCodeFormats'])) {
                             if ($order->get_shipping_postcode() && !empty($order->get_shipping_postcode())) {
-                                $requestData['recipient']['address']['postCode'] = trim($order->get_shipping_postcode());
-								if ($countryData['isoAlpha2'] == 'PL') {
-									$requestData['recipient']['address']['postCode'] = str_replace('-', '', $order->get_shipping_postcode());
-								}
+                                $postCode = trim($order->get_shipping_postcode());
+                                if ($countryData['isoAlpha2'] == 'PL') {
+                                    $postCode = str_replace('-', '', $postCode);
+                                }
+                                $requestData['recipient']['address']['postCode'] = $postCode;
                             }
                         }
                     }
@@ -1571,10 +1572,11 @@ class WooOrder
 			            $requestData['recipient']['address']['addressLine1'] = $this->removeDiactritics( $order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2() );
 		            }
 		            if ( $order->get_shipping_postcode() && ! empty( $order->get_shipping_postcode() ) ) {
-			            $requestData['recipient']['address']['postCode'] = trim( $order->get_shipping_postcode() );
+			            $postCode = trim( $order->get_shipping_postcode() );
 			            if ($countryData['isoAlpha2'] == 'PL') {
-				            $requestData['recipient']['address']['postCode'] = str_replace('-', '', $order->get_shipping_postcode());
-						}
+				            $postCode = str_replace('-', '', $postCode);
+			            }
+			            $requestData['recipient']['address']['postCode'] = $postCode;
 		            }
 	            }
             }
