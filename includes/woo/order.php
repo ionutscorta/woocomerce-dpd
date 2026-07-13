@@ -289,27 +289,17 @@ class WooOrder
                 }
                 if ($this->checkCountry($countryId, true)) {
 
-                    /** 
-                     * Add only once.
-                     * Here we check if this address and settings for this order have allready been stored.
+                    /**
+                     * Current raw shipping address, used below to detect whether the
+                     * address actually changed since the last save.
                      */
-                    if ($orderAddress = $this->getOrderAddress($order->get_id())) {
-                        if ($orderAddress->address && !empty($orderAddress->address)) {
-                            $this->deleteOrderAddress($order->get_id());
-                            $this->deleteOrderSettings($order->get_id());
-                        }
-                    }
-
-                    /** 
-                     * Order data.
-                     */
-                    $shippingMethod = 'delivery';
+                    $currentAddress = $order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2();
                     $cityId = '';
                     $cityName = $order->get_shipping_city();
                     $stateName = $order->get_shipping_state();
                     $postcode = $order->get_shipping_postcode();
 
-                    /** 
+                    /**
                      * Data Addresses.
                      */
                     $addresses = new DataAddresses($this->wpdb);
@@ -325,61 +315,84 @@ class WooOrder
                         }
                     }
 
-                    /** 
-                     * Data Office.
+                    /**
+                     * Add only once.
+                     * Here we check if this address and settings for this order have allready been stored,
+                     * and only reset them when the address actually changed - otherwise a plain order
+                     * "Update" would wipe an already validated address (street/number/block/apartment).
                      */
-                    $officeId = '';
-                    $officeName = '';
-                    $officePickup = get_post_meta($postId, 'dpdro_pickup', true);
-                    $officePickupName = get_post_meta($postId, 'dpdro_pickup_name', true);
-                    $officePickupType = get_post_meta($postId, 'dpdro_pickup_type', true);
-                    if ($officePickup && !empty($officePickup)) {
-                        if ($orderAddress->method && $orderAddress->method == 'pickup') {
-                            $shippingMethod = 'pickup';
+                    $orderAddress = $this->getOrderAddress($order->get_id());
+                    $addressChanged = !$orderAddress || empty($orderAddress->address)
+                        || $orderAddress->address !== $currentAddress
+                        || (string) $orderAddress->address_city_id !== (string) $cityId;
+
+                    if ($addressChanged) {
+                        if ($orderAddress && !empty($orderAddress->address)) {
+                            $this->deleteOrderAddress($order->get_id());
+                            $this->deleteOrderSettings($order->get_id());
                         }
-                        $officeData = $lists->getOfficeById($officePickup);
-                        if ($officeData && !empty($officeData)) {
-                            $officeId = $officeData->office_id;
-                            $officeName = $officeData->office_name;
+
+                        /**
+                         * Order data.
+                         */
+                        $shippingMethod = 'delivery';
+
+                        /**
+                         * Data Office.
+                         */
+                        $officeId = '';
+                        $officeName = '';
+                        $officePickup = get_post_meta($postId, 'dpdro_pickup', true);
+                        $officePickupName = get_post_meta($postId, 'dpdro_pickup_name', true);
+                        $officePickupType = get_post_meta($postId, 'dpdro_pickup_type', true);
+                        if ($officePickup && !empty($officePickup)) {
+                            if ($orderAddress && $orderAddress->method && $orderAddress->method == 'pickup') {
+                                $shippingMethod = 'pickup';
+                            }
+                            $officeData = $lists->getOfficeById($officePickup);
+                            if ($officeData && !empty($officeData)) {
+                                $officeId = $officeData->office_id;
+                                $officeName = $officeData->office_name;
+                            }
                         }
+
+                        /**
+                         * Order data to insert in database.
+                         */
+                        $orderData = [
+                            'order_id'            => $postId,
+                            'address'             => $currentAddress,
+                            'address_city_id'     => (string) $cityId,
+                            'address_city_name'   => (string) $cityName,
+                            'address_street_id'   => '',
+                            'address_street_type' => '',
+                            'address_street_name' => '',
+                            'address_number'      => '',
+                            'address_block'       => '',
+                            'address_apartment'   => '',
+                            'method'              => (string) $shippingMethod,
+                            'office_id'           => (string) $officeId,
+                            'office_name'         => (string) $officeName,
+                            'status'              => 'unset',
+                        ];
+
+                        /**
+                         * Insert order data to database.
+                         */
+                        if (in_array($order->get_shipping_country(), DPDUtil::getAllowedCountryCodes(), true)) {
+                            $this->insertOrderAddress($orderData);
+                        }
+
+                        /**
+                         * Insert order settings to database.
+                         */
+                        $orderSettings = [
+                            'order_id'          => $postId,
+                            'shipping_tax'      => $order->get_shipping_total(),
+                            'shipping_tax_rate' => 'yes'
+                        ];
+                        $this->insertOrderSettings($orderSettings);
                     }
-
-                    /** 
-                     * Order data to insert in database.
-                     */
-                    $orderData = [
-                        'order_id'            => $postId,
-                        'address'             => $order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2(),
-                        'address_city_id'     => (string) $cityId,
-                        'address_city_name'   => (string) $cityName,
-                        'address_street_id'   => '',
-                        'address_street_type' => '',
-                        'address_street_name' => '',
-                        'address_number'      => '',
-                        'address_block'       => '',
-                        'address_apartment'   => '',
-                        'method'              => (string) $shippingMethod,
-                        'office_id'           => (string) $officeId,
-                        'office_name'         => (string) $officeName,
-                        'status'              => 'unset',
-                    ];
-
-                    /** 
-                     * Insert order data to database.
-                     */
-	                if (in_array($order->get_shipping_country(), DPDUtil::getAllowedCountryCodes(), true)) {
-                        $this->insertOrderAddress($orderData);
-                    }
-
-                    /** 
-                     * Insert order settings to database.
-                     */
-                    $orderSettings = [
-                        'order_id'          => $orderData['order_id'],
-                        'shipping_tax'      => $order->get_shipping_total(),
-                        'shipping_tax_rate' => 'yes'
-                    ];
-                    $this->insertOrderSettings($orderSettings);
                 }
             }
         }
@@ -823,6 +836,8 @@ class WooOrder
     public function updateOrderAddressValidated($data, $streetFound)
     {
         $orderId = $data['orderId'];
+        $cityId = $data['cityId'];
+        $cityName = $data['city'];
         $streetId = $data['streetId'];
 		if ($streetFound === false) {
 			$streetId = "STREET-NOT-FOUND:" . $data['streetName'];
@@ -834,8 +849,10 @@ class WooOrder
         $streetApartment = $data['apartment'];
         $this->wpdb->query($this->wpdb->prepare(
             "
-            UPDATE {$this->tableOrderAddresses} 
-            SET 
+            UPDATE {$this->tableOrderAddresses}
+            SET
+                address_city_id = '{$cityId}',
+                address_city_name = '{$cityName}',
                 address_street_id = '{$streetId}',
                 address_street_type = '{$streetType}',
                 address_street_name = '{$streetName}',

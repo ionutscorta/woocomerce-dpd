@@ -62,9 +62,74 @@ if ($orderAddress->address_city_id == '') {
             </div>
             <div class="d-third">
                 <div class="d-field">
-                    <input type="hidden" name="address_city_id" value="<?= $orderAddress->address_city_id; ?>" />
-                    <label><?php _e('City', 'dpdro'); ?></label>
-                    <input type="text" name="address_city_name" value="<?= $orderAddress->address_city_name; ?>" disabled />
+                    <?php if ($_POST['params'] && !empty($_POST['params']) && $_POST['params']['city'] && !empty($_POST['params']['city'])) : ?>
+                        <input type="hidden" name="address_city_id" value="<?= $_POST['params']['cityId']; ?>" />
+                        <input type="hidden" name="address_city_name" value="<?= $_POST['params']['city']; ?>" />
+                    <?php else : ?>
+                        <input type="hidden" name="address_city_id" value="<?= $orderAddress->address_city_id; ?>" />
+                        <input type="hidden" name="address_city_name" value="<?= $orderAddress->address_city_name; ?>" />
+                    <?php endif; ?>
+                    <label><?php _e('City', 'dpdro'); ?> - <?php _e('order city:', 'dpdro'); ?> <?= $order->get_shipping_city(); ?></label>
+                    <?php $ajaxNonceSearchCity = wp_create_nonce('dpdro_search_city'); ?>
+                    <select data-nonce="<?= $ajaxNonceSearchCity; ?>" class="js-d-search-city">
+                        <?php if ($_POST['params'] && !empty($_POST['params']) && $_POST['params']['city'] && !empty($_POST['params']['city'])) : ?>
+                            <option value="<?= $_POST['params']['cityId']; ?>" selected><?= $_POST['params']['city']; ?></option>
+                        <?php else : ?>
+                            <?php if ($orderAddress->address_city_name && !empty($orderAddress->address_city_name)) : ?>
+                                <option value="<?= $orderAddress->address_city_id; ?>" selected><?= $orderAddress->address_city_name; ?></option>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </select>
+                    <script type="text/javascript">
+                        // City search
+                        $ = jQuery;
+                        $('.js-d-search-city').select2({
+                            minimumInputLength: 3,
+                            placeholder: dpdRoGeneral.placeholderSearch,
+                            ajax: {
+                                url: dpdRo.ajaxurl,
+                                type: 'post',
+                                dataType: 'json',
+                                delay: 250,
+                                data: function(params) {
+                                    return {
+                                        action: 'searchCity',
+                                        nonce: $(this).attr('data-nonce'),
+                                        country: $('.js-d-modal-validate').find('input[name="country"]').val(),
+                                        state: $('.js-d-modal-validate').find('input[name="state"]').val(),
+                                        postcode: $('.js-d-modal-validate').find('input[name="address_postcode"]').val(),
+                                        search: params.term,
+                                    };
+                                },
+                                processResults: function(response) {
+                                    return {
+                                        results: response
+                                    };
+                                },
+                                cache: true
+                            },
+                            templateResult: function(params) {
+                                if (!params.id) {
+                                    return params.text;
+                                }
+                                var response = $("<span>" + params.name + "</span>");
+                                return response;
+                            },
+                            templateSelection: function(params) {
+                                if (!params.id) {
+                                    return params.text;
+                                }
+                                $('.js-d-modal-validate').find('input[name="address_city_id"]').val(params.id);
+                                if (params.name) {
+                                    $('.js-d-modal-validate').find('input[name="address_city_name"]').val(params.name);
+                                }
+                                if (params.postcode && params.postcode != '') {
+                                    $('.js-d-modal-validate').find('input[name="address_postcode"]').val(params.postcode);
+                                }
+                                return params.text;
+                            },
+                        });
+                    </script>
                 </div>
             </div>
         </div>
