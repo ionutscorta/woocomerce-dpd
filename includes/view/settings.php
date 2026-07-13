@@ -716,6 +716,37 @@ global $wp_version;
                                 <?php endforeach; ?>
                             </select>
                         </div>
+                        <hr>
+                        <div class="d-field">
+                            <label for="d-setting-advanced-awb-auto-generate-enabled"><?php _e('Automatically generate AWB', 'dpdro'); ?>:</label>
+                            <div class="d-field-list">
+                                <ul>
+                                    <li class="d-checkbox">
+                                        <?php if (isset($dataSettings['awb_auto_generate_enabled']) && $dataSettings['awb_auto_generate_enabled'] == '1') : ?>
+                                            <input class="js-d-setting" id="d-setting-advanced-awb-auto-generate-enabled" type="checkbox" name="awb_auto_generate_enabled" value="1" checked />
+                                        <?php else : ?>
+                                            <input class="js-d-setting" id="d-setting-advanced-awb-auto-generate-enabled" type="checkbox" name="awb_auto_generate_enabled" value="1" />
+                                        <?php endif ?>
+                                        <label for="d-setting-advanced-awb-auto-generate-enabled"><?php _e('If it is checked, the AWB will be generated automatically once the order reaches the status below - the same as pressing "Create shipment" / "Save shipment" manually. The courier is not requested and no pickup is scheduled.', 'dpdro') ?></label>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="d-field">
+                            <label for="d-setting-advanced-awb-auto-generate-status"><?php _e('Order status', 'dpdro'); ?>:</label>
+                            <select class="js-d-setting" id="d-setting-advanced-awb-auto-generate-status" name="awb_auto_generate_status">
+                                <option value=""><?php _e(' --- Please Select --- ', 'dpdro'); ?></option>
+                                <?php foreach (wc_get_order_statuses() as $statusKey => $statusName) : ?>
+                                    <?php $statusKey = str_replace('wc-', '', $statusKey); ?>
+                                    <?php if (isset($dataSettings['awb_auto_generate_status']) && $statusKey == $dataSettings['awb_auto_generate_status']) : ?>
+                                        <option selected value="<?= $statusKey; ?>"><?= $statusName; ?></option>
+                                    <?php else : ?>
+                                        <option value="<?= $statusKey; ?>"><?= $statusName; ?></option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </select>
+                            <small><?php _e('If you need to edit the order afterwards, delete the AWB from the order screen first, make your changes, then regenerate it - this setting does not update an AWB that already exists for the order.', 'dpdro'); ?></small>
+                        </div>
                     </div>
                     <hr>
                     <button data-nonce="<?= $ajaxNonceAdvanceSettings; ?>" class="d-button success alignment js-d-save-advance-settings" type="button">

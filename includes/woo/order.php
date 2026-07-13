@@ -56,6 +56,7 @@ class WooOrder
         add_action('woocommerce_admin_order_data_after_shipping_address', array($this, 'orderActionsAdmin'));
         add_action('woocommerce_email_order_meta', array($this, 'orderActionEmail'), 10, 3);
         add_action('woocommerce_process_shop_order_meta', array($this, 'orderActionAdminUpdate'), 10, 2);
+        add_action('woocommerce_order_status_changed', array($this, 'maybeAutoCreateShipment'), 10, 4);
 
         /**
          * Order ajax.
@@ -1176,6 +1177,47 @@ class WooOrder
         if (isset($_POST['action'])) {
 
             /**
+             * Request params.
+             */
+            $params = $_POST['params'];
+            $result = $this->createShipmentForOrder($params);
+            if ($result['success']) {
+                $json['success'] = true;
+                $successMessage = $result['message'];
+                set_transient('dpdro_notice_success', $result['notice'], 60 * 5);
+            } else {
+                $errorMessage = $result['message'];
+            }
+        } else {
+            $errorMessage = __('Something went wrong.', 'dpdro');
+        }
+
+        /**
+         * Response HTML.
+         */
+        ob_start();
+        include_once PLUGIN_DIR_DPDRO . 'includes/woo/shipment.php';
+        $json['html'] = ob_get_clean();
+
+        /**
+         * Return response.
+         */
+        echo wp_send_json($json);
+        wp_die();
+    }
+
+    /**
+     * Build the DPD shipment request from order + params and create the AWB via the DPD API.
+     * Shared by the manual "Save shipment" AJAX action and automatic AWB generation.
+     * $params accepts the same keys the create-shipment modal posts (orderId, packages,
+     * contents, notes, ref2, products, swap, rsp, rod, rop, voucher, voucherSender, private,
+     * privatePerson), plus an optional pre-built 'parcels' array that bypasses the per-product
+     * grouping below - used by automatic generation, where there is no admin-picked parcel
+     * assignment to group by.
+     */
+    private function createShipmentForOrder($params)
+    {
+            /**
              * Data settings.
              */
             $dataSettings = new DataSettings($this->wpdb);
@@ -1192,12 +1234,7 @@ class WooOrder
             $dataList = new DataLists($this->wpdb);
 
             /**
-             * Request params.
-             */
-            $params = $_POST['params'];
-
-            /**
-             * Get an instance of the WC_Order object. 
+             * Get an instance of the WC_Order object.
              */
             $order = wc_get_order($params['orderId']);
 
@@ -1277,7 +1314,9 @@ class WooOrder
             /**
              * Products / Parcels
              */
-            if ($params['products']) {
+            if (!empty($params['parcels'])) {
+                $requestData['content']['parcels'] = $params['parcels'];
+            } elseif ($params['products']) {
                 $parcels = [];
                 if (
 					($orderShippingMethod == '2412' || $settings['packaging_method'] == 'all') &&
@@ -1614,53 +1653,164 @@ class WooOrder
              * Shipment
              */
             $shipment = $libraryApi->createShipment($requestData);
-                if (!is_array($shipment) || empty($shipment) || array_key_exists('error', $shipment)) {
-                $errorMessage = $shipment['error']['message'];
-                $errorContext = $shipment['error']['context'];
-            } else {
-                $deadline = (isset($shipment['deliveryDeadline']) && !empty($shipment['deliveryDeadline'])) ? $shipment['deliveryDeadline'] : '0000-00-00 00:00:00';
-                $shipmentData = [
-                    'order_id'      => $params['orderId'],
-                    'shipment_id'   => $shipment['id'],
-                    'shipment_data' => json_encode([
-                        'shipment_swap'        => $params['swap'],
-                        'shipment_rod'         => $params['rod'],
-                        'shipment_has_voucher' => $params['voucher'],
-                    ]),
-                    'parcels'       => json_encode($shipment['parcels']),
-                    'price'         => json_encode($shipment['price']),
-                    'pickup'        => $shipment['pickupDate'],
-                    'deadline'      => $deadline
-                ];
-                $orderShipment = $this->insertOrderShipment($shipmentData);
-                if ($orderShipment && !empty($orderShipment)) {
-                    $json['success'] = true;
-                    $successMessage = __('Shipment created successfully.', 'dpdro');
-                    $notice = sprintf(__('Shipment created successfully for %s.', 'dpdro'), '<b>Order ID: ' . $params['orderId'] . '</b>');
-                    set_transient('dpdro_notice_success', $notice, 60 * 5);
-                } else {
-                    $errorMessage = __('Something went wrong.', 'dpdro');
-                }
+            if (!is_array($shipment) || empty($shipment) || array_key_exists('error', $shipment)) {
+                return ['success' => false, 'message' => $shipment['error']['message']];
             }
-        } else {
-            $errorMessage = __('Something went wrong.', 'dpdro');
+
+            $deadline = (isset($shipment['deliveryDeadline']) && !empty($shipment['deliveryDeadline'])) ? $shipment['deliveryDeadline'] : '0000-00-00 00:00:00';
+            $shipmentData = [
+                'order_id'      => $params['orderId'],
+                'shipment_id'   => $shipment['id'],
+                'shipment_data' => json_encode([
+                    'shipment_swap'        => $params['swap'],
+                    'shipment_rod'         => $params['rod'],
+                    'shipment_has_voucher' => $params['voucher'],
+                ]),
+                'parcels'       => json_encode($shipment['parcels']),
+                'price'         => json_encode($shipment['price']),
+                'pickup'        => $shipment['pickupDate'],
+                'deadline'      => $deadline
+            ];
+            $orderShipment = $this->insertOrderShipment($shipmentData);
+            if (!$orderShipment || empty($orderShipment)) {
+                return ['success' => false, 'message' => __('Something went wrong.', 'dpdro')];
+            }
+
+            return [
+                'success' => true,
+                'message' => __('Shipment created successfully.', 'dpdro'),
+                'notice'  => sprintf(__('Shipment created successfully for %s.', 'dpdro'), '<b>Order ID: ' . $params['orderId'] . '</b>'),
+            ];
+    }
+
+    /**
+     * Automatically create an AWB for an order, mirroring the manual "Create
+     * shipment" > "Save shipment" flow, using defaults instead of admin-picked
+     * form values (no notes/ref2, no extra return services, parcels grouped
+     * the same way shipping-cost calculation already groups them).
+     */
+    public function autoCreateShipment($orderId)
+    {
+        $order = wc_get_order($orderId);
+        if (!$order) {
+            return;
         }
 
         /**
-         * Response HTML.
+         * Skip if an AWB already exists for this order.
          */
-        ob_start();
-        include_once PLUGIN_DIR_DPDRO . 'includes/woo/shipment.php';
-        $json['html'] = ob_get_clean();
+        if ($this->getOrderShipment($orderId)) {
+            return;
+        }
 
         /**
-         * Return response.
+         * Only orders placed with a recognized DPD shipping method are eligible.
          */
-        echo wp_send_json($json);
-        wp_die();
+        $orderShippingMethod = false;
+        foreach ($order->get_shipping_methods() as $method) {
+            $orderShippingMethod = str_replace('dpdro_shipping_', '', $method->get_method_id());
+            $orderShippingMethod = str_replace('shipping_dpd_', '', $orderShippingMethod);
+        }
+        $lists = new DataLists($this->wpdb);
+        if (!$orderShippingMethod || !$lists->getServiceById($orderShippingMethod)) {
+            return;
+        }
+
+        /**
+         * The DPD address record is only populated by the checkout/admin-save
+         * hooks (orderComplete / orderCompleteAdmin) - without it there is
+         * nothing usable to build a recipient address from, so skip rather
+         * than risk sending a malformed AWB request.
+         */
+        if (!$this->getOrderAddress($orderId)) {
+            $order->add_order_note(__('DPD RO: automatic AWB generation skipped - no address on file for this order yet.', 'dpdro'));
+            return;
+        }
+
+        /**
+         * Data settings.
+         */
+        $dataSettings = new DataSettings($this->wpdb);
+        $settings = $dataSettings->getSettings();
+
+        /**
+         * Parcels, grouped the same way WooApi::prepareParcels() already groups
+         * them for shipping-cost calculation - there is no admin-picked
+         * per-product parcel assignment to reuse here.
+         */
+        $package = ['contents' => []];
+        foreach ($order->get_items() as $item) {
+            $product = $item->get_product();
+            if (!$product) {
+                continue;
+            }
+            $package['contents'][] = [
+                'data'     => $product,
+                'quantity' => $item->get_quantity(),
+            ];
+        }
+        $wooApi = new WooApi($this->wpdb, $package, $settings);
+        $parcels = $wooApi->prepareParcels($orderShippingMethod, $settings['packaging_method'], $order->get_shipping_country());
+
+        $params = [
+            'orderId'       => $orderId,
+            'packages'      => $settings['packages'],
+            'contents'      => $settings['contents'],
+            'notes'         => '',
+            'ref2'          => '',
+            'products'      => [],
+            'parcels'       => $parcels,
+            'swap'          => 'false',
+            'rsp'           => 'false',
+            'rod'           => 'false',
+            'rop'           => 'false',
+            'voucher'       => 'false',
+            'voucherSender' => '',
+            'private'       => 'false',
+            'privatePerson' => '',
+        ];
+
+        $result = $this->createShipmentForOrder($params);
+        if ($result['success']) {
+            $order->add_order_note(__('DPD RO: AWB generated automatically for this order.', 'dpdro'));
+        } else {
+            $order->add_order_note(sprintf(__('DPD RO: automatic AWB generation failed - %s', 'dpdro'), $result['message']));
+        }
     }
 
-    /** 
+    /**
+     * Fired on every order status transition; auto-generates the AWB when the
+     * new status matches the "Automatically generate AWB" setting.
+     *
+     * This runs inline inside WooCommerce's own status transition - often
+     * from a payment gateway webhook - so anything going wrong here (a DPD
+     * API error, an unexpected response shape, a bug we haven't hit yet)
+     * must never bubble up and break that transition or the surrounding
+     * request. Catching Throwable (not just Exception) so this also survives
+     * TypeErrors and the like, not only intentionally-thrown exceptions.
+     */
+    public function maybeAutoCreateShipment($orderId, $statusFrom, $statusTo, $order)
+    {
+        try {
+            $dataSettings = new DataSettings($this->wpdb);
+            $settings = $dataSettings->getSettings();
+            if (
+                isset($settings['awb_auto_generate_enabled']) && $settings['awb_auto_generate_enabled'] == '1'
+                && !empty($settings['awb_auto_generate_status'])
+                && $statusTo === $settings['awb_auto_generate_status']
+            ) {
+                $this->autoCreateShipment($orderId);
+            }
+        } catch (\Throwable $exception) {
+            error_log(sprintf('DPD RO: automatic AWB generation crashed for order #%s - %s', $orderId, $exception->getMessage()));
+            $order = $order ? $order : wc_get_order($orderId);
+            if ($order) {
+                $order->add_order_note(sprintf(__('DPD RO: automatic AWB generation crashed - %s', 'dpdro'), $exception->getMessage()));
+            }
+        }
+    }
+
+    /**
      * Ajax delete shipment.
      */
     public function deleteShipment()

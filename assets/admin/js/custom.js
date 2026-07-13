@@ -381,6 +381,8 @@
                     default_weight: $('.js-d-setting[name="default_weight"]').val().trim(),
                     update_status_pickup_enabled: $('.js-d-setting[name="update_status_pickup_enabled"]:checked').length ? '1' : '0',
                     update_status_pickup_value: $('.js-d-setting[name="update_status_pickup_value"]').val().trim(),
+                    awb_auto_generate_enabled: $('.js-d-setting[name="awb_auto_generate_enabled"]:checked').length ? '1' : '0',
+                    awb_auto_generate_status: $('.js-d-setting[name="awb_auto_generate_status"]').val().trim(),
                 }
             };
             jQuery.ajax({

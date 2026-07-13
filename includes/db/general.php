@@ -104,6 +104,8 @@ class DBGeneral
             'city_dropdown'         => '0',
             'update_status_pickup_enabled' => '0',
             'update_status_pickup_value'   => '',
+            'awb_auto_generate_enabled'    => '0',
+            'awb_auto_generate_status'     => '',
 
             /**
              * Payment settings.
