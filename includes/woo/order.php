@@ -128,12 +128,12 @@ class WooOrder
         }
 
         /**
-         * Allow code execution only once 
+         * Allow code execution only once
          */
         if (!get_post_meta($orderId, 'dpdro_order_complete', true)) {
 
             /**
-             * Get an instance of the WC_Order object. 
+             * Get an instance of the WC_Order object.
              */
             $order = wc_get_order($orderId);
 
@@ -148,97 +148,25 @@ class WooOrder
             }
             if ($orderShippingMethod) {
 
-                /** 
+                /**
                  * Data Lists.
                  */
                 $lists = new DataLists($this->wpdb);
                 $service = $lists->getServiceById($orderShippingMethod);
                 if ($service && !empty($service)) {
-                    if ($this->checkCountry($order->get_shipping_country(), true)) {
+                    if ($this->buildOrderAddress($orderId)) {
 
-                        /** 
-                         * Order data.
-                         */
-                        $shippingMethod = 'delivery';
-                        $countryId = $order->get_shipping_country();
-                        $stateName = $order->get_shipping_state();
-                        $cityId = '';
-                        $cityName = $order->get_shipping_city();
-                        $postcode = $order->get_shipping_postcode();
-
-                        /** 
-                         * Data Addresses.
-                         */
-                        $addresses = new DataAddresses($this->wpdb);
-                        $cityData = $addresses->getAddress($countryId, $stateName, $cityName);
-                        if ($cityData && !empty($cityData)) {
-                            $cityId = $cityData->site_id;
-                            $cityName = $cityData->name;
-                        } else {
-                            $cityData = $addresses->getAddressByPostcode($postcode);
-                            if ($cityData && !empty($cityData)) {
-                                $cityId = $cityData->site_id;
-                                $cityName = $cityData->name;
-                            }
-                        }
-
-                        /** 
-                         * Data Office.
-                         */
-                        $officeId = '';
-                        $officeName = '';
-                        $officePickup = get_post_meta($orderId, 'dpdro_pickup', true);
-                        $officePickupName = get_post_meta($orderId, 'dpdro_pickup_name', true);
-                        $officePickupType = get_post_meta($orderId, 'dpdro_pickup_type', true);
-                        if ($officePickup && !empty($officePickup)) {
-                            $shippingMethod = 'pickup';
-                            $officeData = $lists->getOfficeById($officePickup);
-                            if ($officeData && !empty($officeData)) {
-                                $officeId = $officeData->office_id;
-                                $officeName = $officeData->office_name;
-                            } else {
-	                            $officeId = $officePickup;
-                            }
-                        }
-
-                        /** 
-                         * Order data to insert in database.
-                         */
-                        $orderData = [
-                            'order_id'            => $orderId,
-                            'address'             => $order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2(),
-                            'address_city_id'     => (string) $cityId,
-                            'address_city_name'   => (string) $cityName,
-                            'address_street_id'   => '',
-                            'address_street_type' => '',
-                            'address_street_name' => '',
-                            'address_number'      => '',
-                            'address_block'       => '',
-                            'address_apartment'   => '',
-                            'method'              => (string) $shippingMethod,
-                            'office_id'           => (string) $officeId,
-                            'office_name'         => (string) $officeName,
-                            'status'              => 'unset',
-                        ];
-
-                        /** 
-                         * Insert order data to database.
-                         */
-	                    if (in_array($order->get_shipping_country(), DPDUtil::getAllowedCountryCodes(), true)) {
-                            $this->insertOrderAddress($orderData);
-                        }
-
-                        /** 
+                        /**
                          * Insert order settings to database.
                          */
                         $orderSettings = [
-                            'order_id'          => $orderData['order_id'],
+                            'order_id'          => $orderId,
                             'shipping_tax'      => WC()->session->get('dpdro_shipping_tax_' . $orderShippingMethod),
                             'shipping_tax_rate' => WC()->session->get('dpdro_shipping_tax_rate_' . $orderShippingMethod)
                         ];
                         $this->insertOrderSettings($orderSettings);
 
-                        /** 
+                        /**
                          * Unset order data from session.
                          */
                         WC()->session->__unset('dpdro_office_id');
@@ -250,11 +178,123 @@ class WooOrder
             }
 
             /**
-             * Flag the action as done (to avoid repetitions on reload for example). 
+             * Flag the action as done (to avoid repetitions on reload for example).
              */
             $order->update_meta_data('dpdro_order_complete', true);
             $order->save();
         }
+    }
+
+    /**
+     * Build and persist the DPD address row for an order from its current
+     * shipping address, if one doesn't already exist. Shared by the checkout
+     * thank-you hook (orderComplete) and automatic AWB generation
+     * (autoCreateShipment) - the latter can run before the customer ever
+     * loads the thank-you page (e.g. a payment gateway webhook moving the
+     * order to "processing" asynchronously), so it can't rely on
+     * orderComplete having already built the address.
+     *
+     * Returns true if an address exists for the order afterwards (either
+     * just built, or already there), false if it could not be built
+     * (unrecognized/inactive DPD shipping method, or non-DPD-eligible country).
+     */
+    private function buildOrderAddress($orderId)
+    {
+        if ($this->getOrderAddress($orderId)) {
+            return true;
+        }
+
+        $order = wc_get_order($orderId);
+        if (!$order) {
+            return false;
+        }
+
+        /**
+         * Order shipping method.
+         */
+        $orderShippingMethod = false;
+        foreach ($order->get_shipping_methods() as $method) {
+            $orderShippingMethod = str_replace('shipping_dpd_', '', $method->get_method_id());
+            $orderShippingMethod = str_replace('dpdro_shipping_', '', $orderShippingMethod);
+        }
+        if (!$orderShippingMethod) {
+            return false;
+        }
+
+        $lists = new DataLists($this->wpdb);
+        $service = $lists->getServiceById($orderShippingMethod);
+        if (!$service || empty($service)) {
+            return false;
+        }
+
+        if (!$this->checkCountry($order->get_shipping_country(), true)) {
+            return false;
+        }
+
+        /**
+         * Order data.
+         */
+        $shippingMethod = 'delivery';
+        $countryId = $order->get_shipping_country();
+        $stateName = $order->get_shipping_state();
+        $cityId = '';
+        $cityName = $order->get_shipping_city();
+        $postcode = $order->get_shipping_postcode();
+
+        /**
+         * Data Addresses.
+         */
+        $addresses = new DataAddresses($this->wpdb);
+        $cityData = $addresses->getAddress($countryId, $stateName, $cityName);
+        if ($cityData && !empty($cityData)) {
+            $cityId = $cityData->site_id;
+            $cityName = $cityData->name;
+        } else {
+            $cityData = $addresses->getAddressByPostcode($postcode);
+            if ($cityData && !empty($cityData)) {
+                $cityId = $cityData->site_id;
+                $cityName = $cityData->name;
+            }
+        }
+
+        /**
+         * Data Office.
+         */
+        $officeId = '';
+        $officeName = '';
+        $officePickup = get_post_meta($orderId, 'dpdro_pickup', true);
+        if ($officePickup && !empty($officePickup)) {
+            $shippingMethod = 'pickup';
+            $officeData = $lists->getOfficeById($officePickup);
+            if ($officeData && !empty($officeData)) {
+                $officeId = $officeData->office_id;
+                $officeName = $officeData->office_name;
+            } else {
+                $officeId = $officePickup;
+            }
+        }
+
+        /**
+         * Order data to insert in database.
+         */
+        $orderData = [
+            'order_id'            => $orderId,
+            'address'             => $order->get_shipping_address_1() . ' ' . $order->get_shipping_address_2(),
+            'address_city_id'     => (string) $cityId,
+            'address_city_name'   => (string) $cityName,
+            'address_street_id'   => '',
+            'address_street_type' => '',
+            'address_street_name' => '',
+            'address_number'      => '',
+            'address_block'       => '',
+            'address_apartment'   => '',
+            'method'              => (string) $shippingMethod,
+            'office_id'           => (string) $officeId,
+            'office_name'         => (string) $officeName,
+            'status'              => 'unset',
+        ];
+
+        return $this->insertOrderAddress($orderData);
     }
 
     /**
@@ -1717,12 +1757,12 @@ class WooOrder
         }
 
         /**
-         * The DPD address record is only populated by the checkout/admin-save
-         * hooks (orderComplete / orderCompleteAdmin) - without it there is
-         * nothing usable to build a recipient address from, so skip rather
-         * than risk sending a malformed AWB request.
+         * The DPD address record is normally populated by the checkout
+         * thank-you hook, but this can run first (e.g. a payment gateway
+         * webhook moving the order to "processing" before the customer's
+         * browser ever loads the thank-you page), so build it here on demand.
          */
-        if (!$this->getOrderAddress($orderId)) {
+        if (!$this->buildOrderAddress($orderId)) {
             $order->add_order_note(__('DPD RO: automatic AWB generation skipped - no address on file for this order yet.', 'dpdro'));
             return;
         }
