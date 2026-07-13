@@ -379,6 +379,8 @@
                     city_dropdown: $('.js-d-setting[name="city_dropdown"]:checked').length ? '1' : '0',
                     use_default_weight: $('.js-d-setting[name="use_default_weight"]:checked').length ? '1' : '0',
                     default_weight: $('.js-d-setting[name="default_weight"]').val().trim(),
+                    update_status_pickup_enabled: $('.js-d-setting[name="update_status_pickup_enabled"]:checked').length ? '1' : '0',
+                    update_status_pickup_value: $('.js-d-setting[name="update_status_pickup_value"]').val().trim(),
                 }
             };
             jQuery.ajax({

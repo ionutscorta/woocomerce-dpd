@@ -102,7 +102,9 @@ class DBGeneral
             'default_weight'         => '1',
             'county_before_city'     => '0',
             'city_dropdown'         => '0',
-            
+            'update_status_pickup_enabled' => '0',
+            'update_status_pickup_value'   => '',
+
             /**
              * Payment settings.
              */

@@ -983,7 +983,19 @@ class WooOrder
         return false;
     }
 
-    /** 
+    /**
+     * Get the order id stored for a given DPD shipment (AWB) id.
+     */
+    public function getOrderIdByShipmentId($shipmentId)
+    {
+        $query = $this->wpdb->get_row($this->wpdb->prepare("SELECT * FROM {$this->tableOrderShipment} WHERE `shipment_id` = %s", $shipmentId));
+        if ($query && !empty($query)) {
+            return $query->order_id;
+        }
+        return false;
+    }
+
+    /**
      * Insert order shipment stored by order id.
      */
     public function insertOrderShipment($shipment)
@@ -2039,6 +2051,25 @@ class WooOrder
                     'pickup_to'   => $courier['orders'][0]['pickupPeriodTo']
                 ];
                 $this->insertRequestCourier($courierData);
+
+                /**
+                 * Update order status when the AWB is scheduled for courier pickup.
+                 */
+                if (
+                    isset($settings['update_status_pickup_enabled']) && $settings['update_status_pickup_enabled'] == '1'
+                    && !empty($settings['update_status_pickup_value'])
+                ) {
+                    foreach ($params['shipments'] as $shipmentId) {
+                        $orderId = $this->getOrderIdByShipmentId($shipmentId);
+                        if ($orderId) {
+                            $order = wc_get_order($orderId);
+                            if ($order) {
+                                $order->update_status($settings['update_status_pickup_value'], __('DPD RO: AWB scheduled for courier pickup.', 'dpdro'));
+                            }
+                        }
+                    }
+                }
+
                 $notice = __('Requested courier successfully.', 'dpdro');
                 set_transient('dpdro_notice_success', $notice, 60 * 5);
             }

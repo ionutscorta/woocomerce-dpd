@@ -686,6 +686,36 @@ global $wp_version;
                                 </ul>
                             </div>
                         </div>
+                        <hr>
+                        <div class="d-field">
+                            <label for="d-setting-advanced-update-status-pickup-enabled"><?php _e('Update order status when scheduled for pickup', 'dpdro'); ?>:</label>
+                            <div class="d-field-list">
+                                <ul>
+                                    <li class="d-checkbox">
+                                        <?php if (isset($dataSettings['update_status_pickup_enabled']) && $dataSettings['update_status_pickup_enabled'] == '1') : ?>
+                                            <input class="js-d-setting" id="d-setting-advanced-update-status-pickup-enabled" type="checkbox" name="update_status_pickup_enabled" value="1" checked />
+                                        <?php else : ?>
+                                            <input class="js-d-setting" id="d-setting-advanced-update-status-pickup-enabled" type="checkbox" name="update_status_pickup_enabled" value="1" />
+                                        <?php endif ?>
+                                        <label for="d-setting-advanced-update-status-pickup-enabled"><?php _e('If it is checked, the order status will be updated automatically when the AWB is scheduled for courier pickup.', 'dpdro') ?></label>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="d-field">
+                            <label for="d-setting-advanced-update-status-pickup-value"><?php _e('Order status', 'dpdro'); ?>:</label>
+                            <select class="js-d-setting" id="d-setting-advanced-update-status-pickup-value" name="update_status_pickup_value">
+                                <option value=""><?php _e(' --- Please Select --- ', 'dpdro'); ?></option>
+                                <?php foreach (wc_get_order_statuses() as $statusKey => $statusName) : ?>
+                                    <?php $statusKey = str_replace('wc-', '', $statusKey); ?>
+                                    <?php if (isset($dataSettings['update_status_pickup_value']) && $statusKey == $dataSettings['update_status_pickup_value']) : ?>
+                                        <option selected value="<?= $statusKey; ?>"><?= $statusName; ?></option>
+                                    <?php else : ?>
+                                        <option value="<?= $statusKey; ?>"><?= $statusName; ?></option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
                     </div>
                     <hr>
                     <button data-nonce="<?= $ajaxNonceAdvanceSettings; ?>" class="d-button success alignment js-d-save-advance-settings" type="button">
