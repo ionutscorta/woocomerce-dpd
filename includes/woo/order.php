@@ -155,16 +155,7 @@ class WooOrder
                 $service = $lists->getServiceById($orderShippingMethod);
                 if ($service && !empty($service)) {
                     if ($this->buildOrderAddress($orderId)) {
-
-                        /**
-                         * Insert order settings to database.
-                         */
-                        $orderSettings = [
-                            'order_id'          => $orderId,
-                            'shipping_tax'      => WC()->session->get('dpdro_shipping_tax_' . $orderShippingMethod),
-                            'shipping_tax_rate' => WC()->session->get('dpdro_shipping_tax_rate_' . $orderShippingMethod)
-                        ];
-                        $this->insertOrderSettings($orderSettings);
+                        $this->buildOrderSettings($orderId, $orderShippingMethod);
 
                         /**
                          * Unset order data from session.
@@ -295,6 +286,39 @@ class WooOrder
         ];
 
         return $this->insertOrderAddress($orderData);
+    }
+
+    /**
+     * Persist the DPD order-settings row (the transportation-fee tax data
+     * computed by the shipping method during checkout, session keys
+     * dpdro_shipping_tax[_rate]_{serviceId}) for an order, if one doesn't
+     * already exist. Shared by the checkout thank-you hook (orderComplete)
+     * and automatic AWB generation (autoCreateShipment) - for COD orders in
+     * particular, WooCommerce moves the order to its "processing"/"on-hold"
+     * status synchronously inside the checkout request itself, before the
+     * thank-you page ever loads, so autoCreateShipment can run first and
+     * can't rely on orderComplete having already stored this row. Without
+     * it, createShipmentForOrder() falls back to a blank shipping_tax_rate,
+     * which causes the transportation fee to be dropped from the COD amount.
+     *
+     * Returns true if a settings row exists for the order afterwards.
+     */
+    private function buildOrderSettings($orderId, $orderShippingMethod)
+    {
+        if ($this->getOrderSettings($orderId)) {
+            return true;
+        }
+
+        if (!function_exists('WC') || !WC()->session) {
+            return false;
+        }
+
+        $orderSettings = [
+            'order_id'          => $orderId,
+            'shipping_tax'      => WC()->session->get('dpdro_shipping_tax_' . $orderShippingMethod),
+            'shipping_tax_rate' => WC()->session->get('dpdro_shipping_tax_rate_' . $orderShippingMethod),
+        ];
+        return $this->insertOrderSettings($orderSettings);
     }
 
     /**
@@ -1766,6 +1790,7 @@ class WooOrder
             $order->add_order_note(__('DPD RO: automatic AWB generation skipped - no address on file for this order yet.', 'dpdro'));
             return;
         }
+        $this->buildOrderSettings($orderId, $orderShippingMethod);
 
         /**
          * Data settings.
