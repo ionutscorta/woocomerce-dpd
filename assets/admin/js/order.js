@@ -691,6 +691,9 @@
 
             // Office data
             let office = e.data;
+            if (!office || !office.address) {
+                return;
+            }
             $('.js-dpdro input[name="address_city_name"]').val(office.address.siteName);
             $('.js-dpdro input[name="address_postcode"]').val(office.address.postCode);
             $('.js-dpdro input[name="address"]').val(office.address.fullAddressString);

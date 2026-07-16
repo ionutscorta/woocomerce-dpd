@@ -291,6 +291,9 @@ function dpdroLog(enable, type, ...args) {
 
                     // Office data
                     let office = e.data;
+                    if (!office || !office.address) {
+                        return;
+                    }
                     dpdroLog(LOGS_ENABLED, "event-listener", "inside the event listener");
 
                     // Checkout steps - update DOM fields
